@@ -1,0 +1,341 @@
+---
+title: "PSTAT 126 Project"
+author: Jeff Shen
+date: "2023-04-27"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include = FALSE}
+# default code chunk options
+knitr::opts_chunk$set(echo = T,
+                      results = 'markup',
+                      message = F, 
+                      warning = F,
+                      fig.width = 4,
+                      fig.height = 3,
+                      fig.align = 'center') 
+
+# load packages
+library(faraway)
+library(tidyverse)
+library(tidymodels)
+library(modelr)
+library(ggplot2)
+library(glmnet)
+
+```
+## STEP ONE
+
+## Introduction
+
+In this project, we will analyze the relationship between income and education using the income.csv dataset. Rather than simply comparing income levels and education levels, we will aggregate the data by calculating the percentage of individuals with income higher then 50k for each education level. This will allow us to create a quantitative variable for the proportion of individuals in each education level who earn a high income, which we can then use to explore the relationship between education and income. The dataset of interest comes from the UCI Machine Learning Repository and is available on Kaggle as well at: https://www.kaggle.com/datasets/uciml/adult-census-income. It contains information about individuals from the 1994 Census database, including demographic variables such as age, education, marital status, occupation, and more.
+
+The variable of interest for this analysis is the income column, and we will be using a simple linear regression model to examine its relationship with education.
+
+## Hypotheses
+
+
+Our objective is to investigate the relationship between education level and income among individuals in the 1994 Census database by aggregating the data to calculate the percentage of individuals with income higher than 50k for each education level. We aim to determine whether there is a positive linear relationship between education level and the proportion of individuals with high income.
+
+Null hypothesis: There is no significant positive linear relationship between education and the proportion of individuals with high income in the 1994 Census database. The beta coefficient for education (β1) in a linear regression model predicting the proportion of individuals with high income is equal to zero.
+
+$$H_0: \beta_1 = 0$$
+
+Alternative hypothesis: There is a significant positive linear relationship between education and the proportion of individuals with high income in the 1994 Census database, with higher levels of education associated with a higher proportion of individuals with high income. The beta coefficient for education (β1) in a linear regression model predicting the proportion of individuals with high income is greater than zero.
+
+$$H_a: \beta_1 > 0$$
+
+We can test these hypotheses using a linear regression model and examining the p-value associated with the beta coefficient for education. If the p-value is less than our chosen significance level (typically 0.05), we can reject the null hypothesis and conclude that there is evidence of a positive linear relationship between education and the proportion of individuals with high income.
+
+## Checking the Assumptions for Linear Regression
+```{r}
+income_data <- read.csv("~/Desktop/adult.csv")
+head(income_data)
+```
+```{r assumption_plots, fig.show = 'show', echo=FALSE}
+# Divide into education levels
+edu_levels <- c("Preschool", "1st-4th", "5th-6th", "7th-8th", "9th", "10th", "11th", "12th",
+                "HS-grad", "Some-college", "Assoc-acdm", "Assoc-voc", "Bachelors", "Masters", "Prof-school", "Doctorate")
+
+# Transform each education level to an 'education number' to compare 2 quantitative variables
+income_data <- income_data %>%
+  mutate(education_num = match(education, edu_levels))
+
+# Calculate the percentage of individuals making over 50k in each education group to create data aggregation for income discrepancies 
+income_summary <- income_data %>%
+  group_by(education_num) %>%
+  summarize(prop_over_50k = mean(income == ">50K"))
+
+# Create a scatterplot of education level (numerical) vs. proportion over 50k
+ggplot(income_summary, aes(x = education_num, y = prop_over_50k)) +
+  geom_point() +
+  labs(x = "Education Level", y = "Proportion Making Over 50K", title = "x") +
+  scale_x_continuous(breaks = c(1:length(edu_levels)), labels = edu_levels) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(size = 11, hjust = 0.5, vjust = 1.5))
+
+# Create a bar graph of proportion of high income individuals by education level
+ggplot(data=income_summary, aes(x = education_num, y = prop_over_50k)) +
+  geom_bar(stat = "identity", fill = "#377EB8") +
+  labs(x = "Education Level", y = "Proportion with Income over 50K", title = "Proportion of High Income by Education") +
+  scale_x_continuous(breaks = c(1:length(edu_levels)), labels = edu_levels) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+    plot.title = element_text(size = 11, hjust = 0.5, vjust = 1.5))
+
+# Create a stacked bar chart of income against education level
+ggplot(data = income_data, aes(x = education_num, fill = income)) +
+  geom_bar(position = "stack") +
+  labs(x = "Education Level", y = "Count", title = "Distribution of Income by Education Level") +
+  scale_x_continuous(breaks = 1:length(edu_levels), labels = edu_levels) +
+  scale_fill_manual(values = c("#377EB8", "#E41A1C"), labels = c("<=50K", ">50K")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(size = 11, hjust = 0.5, vjust = 1.5))
+```
+
+
+## STEP TWO
+
+```{r}
+# Perform linear regression
+lm_fit <- lm(prop_over_50k ~ education_num, data = income_summary)
+summary(lm_fit)
+
+# Plot trend line
+ggplot(income_summary, aes(x = education_num, y = prop_over_50k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(x = "Education Level", y = "Proportion Making Over 50K") +
+  scale_x_continuous(breaks = c(1:length(edu_levels)), labels = edu_levels) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+    plot.title = element_text(size = 11, hjust = 0.5, vjust = 1.5))
+```
+```{r}
+beta_1 <- coef(lm_fit)[2]
+cat("beta_1 coefficient: ", beta_1, "\n")
+```
+
+```{r Step_2_Part_2_log_plot}
+# Generates a log transformation for the scatterplot
+log_plot <- ggplot(income_summary, aes(x = log10(education_num), y = prop_over_50k)) +
+  geom_point() + geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(x = "Log Education Level", y = "Proportion Making Over 50K") +
+  scale_x_continuous(breaks = log10(c(1:length(edu_levels))), labels = edu_levels) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(size = 11, hjust = 0.5, vjust = 1.5))
+log_plot
+
+# Generates summary to view R^2 value for the log transformation
+lm_log_fit <- lm(prop_over_50k ~ log10(education_num), data = income_summary)
+summary(lm_log_fit)
+
+```
+```{r Step_2_Part_2_sqrt_plot}
+# Generates a sqrt transformation for the scatterplot
+sqrt_plot <- ggplot(income_summary, aes(x = sqrt(education_num), y = prop_over_50k)) +
+  geom_point() + geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(x = "Square Root of Education Level", y = "Proportion Making Over 50K") +
+  scale_x_continuous(breaks = sqrt(c(1:length(edu_levels))), labels = edu_levels) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(size = 11, hjust = 0.5, vjust = 1.5))
+sqrt_plot
+
+# Generates summary to view R^2 value for the sqrt transformation
+lm_sqrt_fit <- lm(prop_over_50k ~ sqrt(education_num), data = income_summary)
+summary(lm_sqrt_fit)
+```
+# Scatter Plot Analysis
+
+Our initial scatter plot data compared education level (numerical) vs. proportion making over 50k. The graph displayed an exponential upward trend for the proportion making over 50k as the level of education increased. In order to find a better fit to the trend line, we created multiple transformations of the scatter plot in an attempt to make the plot more linear. For our transformations, we decided to manipulate the data by comparing both the log and square root of education level to the proportion making over 50k.
+
+After analyzing the results from the new transformations, we determined that the log transformation plot created an even steeper rise in comparison to the original and as a result pushed the points even further away from the trend line. Although not as severe, the square root transformation also became steeper than the original. This meant that neither transformation linearized the data set and we concluded that the original plot showed the best fit. Furthermore, this could be confirmed by comparing the r-squared value for each of the three scatter plots. The original plot posted the highest value at 0.7872, compared to the log and square root plots at 0.4959 and 0.6595, respectively.
+
+
+```{r}
+##Confidence Interval
+
+
+
+income_data$income_trans <- ifelse(income_data$income == ">50K",1,0)
+income_data <- income_data[sample(1:nrow(income_data), 500), ]
+l.model <- glm(income_trans ~ fnlwgt, data = income_data, family = binomial(link = "logit"))
+
+confint(l.model)
+
+#Logistic Regression for this model as variable is categorical. Did confidence interval for income s
+
+```
+
+
+
+```{r}
+
+#plot of transformed variable for income data with income variable
+p <- ggplot(income_data, aes(x = fnlwgt, y = income_trans)) + geom_point() + geom_smooth(method = "lm", se = FALSE, color = "red") + labs(x = 'People with income more than 50k', y = 'People with income less than 50k')
+p
+
+```
+this is the transformation of income instead of education so potentially use for logistic regression in part four and make a new transformation of education to complete part two
+
+## STEP THREE
+
+
+# R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+#in the original experiement were analyzing the effect on education level 
+#in this step we will explore why or why not other variables might be better predictors
+#in this case sex(a categorical variable will predict income)
+
+income_data <- read.csv("~/Desktop/adult.csv")
+
+#in this case the str function tells us the structure of data
+str(income_data)
+
+
+income_data[income_data == "?"]<-NA
+
+
+#making sure the predictor is a factor and the income is stored as a binary
+income_data$sex<-as.factor(income_data$sex)
+
+income_data$income_binary <- ifelse(income_data$income == ">50K", 1, 0)
+#print(income_data)
+
+
+
+fit<- glm(income_binary ~ sex, data = income_data, family = binomial)
+
+summary(fit)
+#the fitted model of this logistic regression indicates a positive slove and 
+#the p value is 2*10^-6 which is much less than 0.05 indicating a strong linear relationship
+#less likely that the b1 in this case is zero
+
+#Since this is logistic regression we cant calculate R^2 however McFadden's pseudo
+#R^2 is a good estimate
+
+ll.null<-fit$null.deviance/-2
+ll.proposed <- fit$deviance/-2
+
+r_squared <-(ll.null-ll.proposed)/ll.null
+print(r_squared)
+#in this case the R^2 value is 0.0466 which is low indicating a low explanation for 
+#variancein the response variable therefore for this logistic regression we cannot be sure 
+#if the income is being fully explained by the predictor (sex) or another random factor
+
+```
+```{r}
+#Since the last model had a low R^2 value we can try another variable which may also predict income
+#Maybe hours per week on the job?
+
+income_data$hours.per.week<-as.integer(income_data$hours.per.week)
+
+
+log<- glm(income_binary ~ hours.per.week, data = income_data, family = binomial)
+
+summary(log)
+
+ll.null<-log$null.deviance/-2
+ll.proposed <- log$deviance/-2
+
+r_squared <-(ll.null-ll.proposed)/ll.null
+print(r_squared)
+
+#In this case the R^2 squared value is also low however slightly higher: 0.048
+
+plot(income_data$hours.per.week,income_data$income_binary, main = "Linear Regression", xlab = "Predictor Variable", ylab = "Response Variable")
+
+# Add the regression line to the plot
+abline(log, col = "red")
+
+# Add a legend if desired
+legend("topleft", legend = "Regression Line", col = "red", lwd = 1)
+
+```
+
+
+
+# STEP FOUR
+
+Execute both ridge regression (RR) and LASSO on the complete variable set (use cross-
+validation to find lambda). Analyze and differentiate the models (i.e., coeﬀicients) with
+the final MLR model from the previous project task.
+```{r}
+#Ridge Regression for variables 
+
+#response variable
+y <- income_data$education.num
+
+#define the matrix of the predictor variables
+x <- data.matrix(income_data[, c('age', 'fnlwgt', 'hours.per.week')])
+
+#fit Ridge Regression Model
+model <- glmnet(x, y, alpha = 0)
+
+#summary of the model
+summary(model)
+
+#performing k-fold cross_validation in order to find optimal lambda value
+cv_model <- cv.glmnet(x, y, alpha = 0)
+
+#find optimal lambda value that minimizes test MSE
+best_lambda <- cv_model$lambda.min
+best_lambda
+
+#produce plot of test MSE by lambda value
+plot(cv_model)
+
+#find coeffiencts of best model
+best_model <- glmnet(x, y, alpha = 0, lamba = best_lambda)
+coef(best_model)
+```
+
+
+# LASSO regression for variables
+```{r}
+#response variable
+y <- income_data$education.num
+
+#define the matrix of the predictor variables
+x <- data.matrix(income_data[, c('age', 'fnlwgt', 'hours.per.week')])
+
+# perform k-fold cross validation to find optimal lambda value
+cv_model2 <- cv.glmnet(x, y, alpha = 1)
+
+#find optimal lambda value that minimizes test MSE
+best_lambda2 <- cv_model2$lambda.min
+best_lambda2
+
+#producing plot of test MSE by lambda value
+plot(cv_model2)
+
+#Analyzing final model
+#finding coefficients of best model
+
+best_model2 <- glmnet(x, y, alpha = 1, lambda = best_lambda2)
+coef(best_model2)
+
+
+#using best fitted model to make predictions
+
+y_predicted2 <- predict(model, s = best_lambda2, newx = x)
+
+
+#calculating R^2 and SST and SSE
+sst <- sum((y - mean(y))^2)
+sse <- sum((y_predicted2 - y)^2)
+
+r_2 <- 1 - sse/sst
+r_2
+```
+
+# Bootstrapping
+  gonna do this for part four
+```{r}
+
+```
